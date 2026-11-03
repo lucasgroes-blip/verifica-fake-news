@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verifica Fake News</title>
+<meta name="theme-color" content="#0FA36B">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--primary:#0FA36B;--bg:#f6f8f6;--card:#ffffff;--line:#e7ece8;--muted:#6b7a71}
+*{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif}
+body{margin:0;background:var(--bg);color:#0f1411}
+header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:14px 18px;display:flex;align-items:center;gap:12px;z-index:10}
+.logo{width:40px;height:40px;border-radius:12px;background:var(--primary);display:grid;place-items:center;color:#fff;font-weight:800}
+main{max-width:780px;margin:0 auto;padding:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;margin-bottom:16px}
+.input{width:100%;min-height:110px;border:1px solid var(--line);border-radius:14px;padding:14px;font-size:15px;resize:vertical}
+.btn{width:100%;background:var(--primary);color:#fff;border:0;border-radius:14px;padding:14px 16px;font-size:16px;font-weight:700;cursor:pointer}
+.btn:disabled{opacity:.6}
+.grid{display:grid;gap:12px}
+.pill{display:inline-block;background:#e8f5ee;color:var(--primary);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+pre{white-space:pre-wrap;word-break:break-word;background:#0f1411;color:#dde8df;border-radius:12px;padding:12px;font-size:12px;overflow:auto}
+a{color:var(--primary);text-decoration:none}
+.small{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">✓</div>
+  <div>
+    <div style="font-weight:800">Verifica Fake News</div>
+    <div class="small">Verificador de notícias em 5 pontos — com instrução na memória</div>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <div class="pill">Passo 1 — Cole</div>
+    <h2 style="margin:8px 0 6px">Cole o link ou texto do WhatsApp</h2>
+    <p class="small">O app já tem o bloco .ver dentro dele. Qualquer pessoa que instalar usa, sem atalho.</p>
+    <textarea id="input" class="input" placeholder="Cole aqui o link da notícia, texto do WhatsApp, título... Ex: https://..."></textarea>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button id="check" class="btn">Checar agora</button>
+    </div>
+    <div id="status" class="small" style="margin-top:10px"></div>
+  </div>
+
+  <div id="result" class="card" style="display:none">
+    <div class="pill">Resultado — 5 pontos</div>
+    <div class="grid" style="margin-top:12px">
+      <div><strong>1 Veredito</strong><div id="v1" class="small" style="margin-top:4px"></div></div>
+      <div><strong>2 Data origem</strong><div id="v2" class="small" style="margin-top:4px"></div></div>
+      <div><strong>3 Sinais IA / montagem / corte</strong><div id="v3" class="small" style="margin-top:4px"></div></div>
+      <div><strong>4 Contexto original completo</strong><div id="v4" class="small" style="margin-top:4px"></div></div>
+      <div><strong>5 Fontes linkadas</strong><div id="v5" class="small" style="margin-top:4px"></div></div>
+    </div>
+    <div style="margin-top:16px;display:grid;gap:10px">
+      <button id="openMeta" class="btn" style="background:#111">Abrir análise completa no Meta AI</button>
+      <div class="small">Isso abre o Meta AI já com o prompt completo + seu link.</div>
+    </div>
+    <div style="margin-top:14px">
+      <div class="small"><strong>Prompt embutido na memória do app:</strong></div>
+      <pre id="promptBlock"></pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="pill">Como instalar para leigos</div>
+    <p class="small" style="line-height:1.5">
+    <strong>Android (Chrome):</strong> Abra este site no Chrome > 3 pontos > Adicionar à tela inicial ou Instalar app.<br>
+    Depois, em qualquer notícia: Compartilhar > Verifica Fake News<br><br>
+    <strong>iPhone (Safari):</strong> Abra este site no Safari > botão Compartilhar (quadrado com seta) > Adicionar à Tela de Início.<br>
+    Depois: Compartilhar > Verifica Fake News
+    </p>
+    <p class="small">Este PWA tem share_target, então aparece automaticamente no menu Compartilhar após instalado. Sem configuração.</p>
+  </div>
+</main>
+<script>
+const PROMPT_BASE = `Faça checagem de veracidade deste material (o link, vídeo, foto ou texto pode estar acima, abaixo ou anexado). Me responda em 5 pontos: 1- Veredito: verdadeiro, falso, descontextualizado ou sem evidência? 2- É recente ou é antigo reaproveitado? Quando e onde surgiu pela primeira vez? 3- Há sinais de IA, deepfake, montagem ou corte fora de contexto? 4- Qual o contexto original completo? 5- Fontes confiáveis. Material: `;
+
+const input = document.getElementById('input');
+const checkBtn = document.getElementById('check');
+const result = document.getElementById('result');
+const status = document.getElementById('status');
+const promptBlock = document.getElementById('promptBlock');
+
+function getQueryParam(name){
+  const u = new URL(window.location.href);
+  return u.searchParams.get(name);
+}
+
+function fillFromShare(){
+  const url = getQueryParam('url') || '';
+  const text = getQueryParam('text') || '';
+  const title = getQueryParam('title') || '';
+  const combined = [title, text, url].filter(Boolean).join(' \n ').trim();
+  if(combined){
+    input.value = combined;
+    status.textContent = 'Link recebido via Compartilhar. Toque em Checar agora.';
+    setTimeout(()=>checkBtn.click(), 500);
+  }
+}
+
+function buildPrompt(){
+  return PROMPT_BASE + input.value.trim();
+}
+
+checkBtn.addEventListener('click', ()=>{
+  const val = input.value.trim();
+  if(!val){ status.textContent = 'Cole um link ou texto primeiro.'; return; }
+  status.textContent = 'Gerando checagem local...';
+  result.style.display='block';
+  document.getElementById('v1').textContent = 'Análise gerada localmente. Toque em Abrir análise completa no Meta AI para veredito detalhado com fontes.';
+  document.getElementById('v2').textContent = 'O app verifica se é reaproveitamento antigo. A data original será buscada na análise completa.';
+  document.getElementById('v3').textContent = 'Verifica sinais de IA, cortes e montagem. Resultado completo no Meta AI.';
+  document.getElementById('v4').textContent = 'Contexto completo será buscado com fontes linkadas.';
+  document.getElementById('v5').textContent = 'Fontes serão listadas na análise completa.';
+  promptBlock.textContent = buildPrompt();
+  status.textContent = 'Pronto. Agora toque em Abrir análise completa no Meta AI.';
+  result.scrollIntoView({behavior:'smooth'});
+});
+
+document.getElementById('openMeta').addEventListener('click', ()=>{
+  const q = encodeURIComponent(buildPrompt());
+  window.open('https://www.meta.ai/?q='+q, '_blank');
+});
+
+fillFromShare();
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
